@@ -1,0 +1,61 @@
+# ═══════════════════════════════════════════════════════════════
+# .gitignore - HR看板项目
+# 防止敏感数据和临时文件上传到GitHub
+# ═══════════════════════════════════════════════════════════════
+
+# 本地生成的示例数据（不上传）
+data_sample/
+# 持久化数据目录：data/ 中的 xlsx 文件会上传到 GitHub，供云上看板使用
+# 如需临时禁止上传真实数据，注释掉下面两行
+!data/
+!data/*.xlsx
+!data/*.xls
+*.xlsx
+*.xls
+*.csv
+
+# Python虚拟环境
+venv/
+env/
+.venv/
+env/
+ENV/
+
+# Python缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 配置文件（可能包含密码）
+.env
+.secrets
+*.secrets
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Streamlit缓存
+.streamlit/secrets.toml
+
+# 日志文件
+*.log
+streamlit.log
+
+# 临时文件
+temp/
+tmp/
+*.tmp
+*.bak
+*.backup
+
+# 生成的报告（可能包含真实数据）
+*_report_*.md
+*_package_*.zip
+output/
+exports/
