@@ -5,7 +5,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import os, re, io, base64, zipfile
+import os, re, io, base64, zipfile, json
 from datetime import datetime
 import auth
 
@@ -19,6 +19,65 @@ COLOR_CARD = "#FFFFFF"
 def extract_month(fn):
     m = re.search(r'(\d{6})', fn)
     return m.group(1) if m else None
+
+def load_data_from_private_repo():
+    """从私有GitHub仓库读取真实HR数据（通过Personal Access Token认证）"""
+    try:
+        token = st.secrets.get("github_data_token", "")
+        repo = st.secrets.get("github_data_repo", "")
+    except Exception:
+        return None, None, None
+    if not token or not repo:
+        return None, None, None
+
+    import requests as req
+
+    # 尝试读取 data/ 目录和根目录下的数据文件
+    pd_l, cd_l, td_l = [], [], []
+    paths_to_check = ["data", ""]
+
+    for data_path in paths_to_check:
+        api_url = f"https://api.github.com/repos/{repo}/contents/{data_path}"
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        try:
+            resp = req.get(api_url, headers=headers, timeout=15)
+            if resp.status_code != 200:
+                continue
+            items = resp.json()
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                fn = item.get("name", "")
+                if not fn.endswith((".xlsx", ".xls")):
+                    continue
+                m = extract_month(fn)
+                download_url = item.get("download_url", "")
+                if not download_url:
+                    continue
+                try:
+                    file_resp = req.get(download_url, headers=headers, timeout=30)
+                    if file_resp.status_code != 200:
+                        continue
+                    df = pd.read_excel(io.BytesIO(file_resp.content))
+                    df["_month"] = m
+                    if fn.startswith("payroll_"):
+                        pd_l.append(df)
+                    elif fn.startswith("hr_cost_"):
+                        cd_l.append(df)
+                    elif fn.startswith("talent_"):
+                        td_l.append(df)
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    pr = pd.concat(pd_l, ignore_index=True) if pd_l else None
+    co = pd.concat(cd_l, ignore_index=True) if cd_l else None
+    ta = pd.concat(td_l, ignore_index=True) if td_l else None
+    return pr, co, ta
 
 def load_all_data():
     pd_l, cd_l, td_l = [], [], []
@@ -209,13 +268,17 @@ if uploaded:
     payroll_raw, cost_raw, talent_raw = load_uploaded_data(uploaded)
     st.sidebar.success(f"✅ 已加载 {len(uploaded)} 个文件")
 else:
-    # 优先读取仓库中的持久数据（data/目录），其次读取本地示例，最后自动生成演示数据
-    payroll_raw, cost_raw, talent_raw = load_all_data()
+    # 数据加载优先级：私有仓库真实数据 > 本地示例数据 > 自动演示数据
+    payroll_raw, cost_raw, talent_raw = load_data_from_private_repo()
     if payroll_raw is not None or cost_raw is not None or talent_raw is not None:
-        st.sidebar.info("📂 使用本地示例数据")
+        st.sidebar.info("🔒 使用私有仓库真实数据")
     else:
-        payroll_raw, cost_raw, talent_raw = generate_demo_data()
-        st.sidebar.info("📊 使用自动生成的演示数据")
+        payroll_raw, cost_raw, talent_raw = load_all_data()
+        if payroll_raw is not None or cost_raw is not None or talent_raw is not None:
+            st.sidebar.info("📂 使用本地示例数据")
+        else:
+            payroll_raw, cost_raw, talent_raw = generate_demo_data()
+            st.sidebar.info("📊 使用自动生成的演示数据")
 
 ALL_MONTHS = sorted(set(
     (payroll_raw["_month"].unique().tolist() if payroll_raw is not None else []) +
