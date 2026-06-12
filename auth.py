@@ -7,7 +7,7 @@
 
 import streamlit as st
 
-DEFAULT_PASSWORD = "hr2026"
+DEFAULT_PASSWORD = "ZY202606"
 
 def check_password():
     """密码验证，通过则返回 True"""
