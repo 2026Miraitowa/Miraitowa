@@ -726,7 +726,27 @@ def cluster_high_risk(
         result["narrative"] = f"⚠️ 有效特征数不足（需≥2），当前仅{len(valid_features)}个"
         return result
 
-    cluster_df = df[valid_features].dropna().copy()
+    # 将字符串格式的工龄（如"7年5月"）转换为数值
+    import re
+    def _parse_work_years(val):
+        if pd.isna(val):
+            return None
+        val_str = str(val).strip()
+        m = re.match(r'(\d+)年(\d+)月', val_str)
+        if m:
+            return int(m.group(1)) + int(m.group(2)) / 12.0
+        m = re.match(r'(\d+)年', val_str)
+        if m:
+            return float(m.group(1))
+        try:
+            return float(val_str)
+        except:
+            return None
+
+    cluster_df_raw = df[valid_features].copy()
+    if "工龄" in cluster_df_raw.columns:
+        cluster_df_raw["工龄"] = cluster_df_raw["工龄"].apply(_parse_work_years)
+    cluster_df = cluster_df_raw.dropna()
     if len(cluster_df) < n_clusters * 3:
         result["narrative"] = f"⚠️ 有效数据量（{len(cluster_df)}条）不足以支撑{n_clusters}类聚类"
         return result
@@ -1020,9 +1040,10 @@ def generate_full_report(
 
     if talent is not None and not talent.empty:
         cluster_features = []
-        for f in ["工龄", "绩效工资"] if payroll is not None else ["工龄"]:
+        for f in ["工龄_数值", "工龄", "绩效工资"] if payroll is not None else ["工龄_数值", "工龄"]:
             if _check_col(talent, f):
                 cluster_features.append(f)
+                break  # 只取第一个匹配的
         if len(cluster_features) >= 2:
             cluster_result = cluster_high_risk(talent, cluster_features, n_clusters=3)
             report.append(f"{cluster_result.get('narrative', '')}")
@@ -1179,7 +1200,8 @@ def analyze_module_3_hr(
             analyses.append(pareto)
 
     elif active_tab == "留存率" and "工龄" in payroll.columns and "离职状态" in payroll.columns:
-        corr = analyze_correlation(payroll, [("工龄", "离职状态".replace("已离职", "1").replace("在职", "0"))])
+        work_col = "工龄_数值" if "工龄_数值" in payroll.columns else "工龄"
+        corr = analyze_correlation(payroll, [(work_col, "离职状态".replace("已离职", "1").replace("在职", "0"))])
         analyses.append(corr)
 
     elif active_tab == "职级" and "职级" in payroll.columns:
@@ -1191,7 +1213,8 @@ def analyze_module_3_hr(
             analyses.append(gini)
 
     elif active_tab == "工龄" and "工龄" in payroll.columns:
-        outlier = detect_outliers_zscore(payroll, "工龄")
+        work_col = "工龄_数值" if "工龄_数值" in payroll.columns else "工龄"
+        outlier = detect_outliers_zscore(payroll, work_col)
         analyses.append(outlier)
 
     elif active_tab == "学历" and "学历" in payroll.columns and "职级" in payroll.columns:

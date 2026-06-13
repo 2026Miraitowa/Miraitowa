@@ -65,6 +65,23 @@ st.markdown("""
 if not auth.check_password():
     st.stop()
 
+# ── 工具函数 ──
+def parse_work_years(val):
+    """将 'X年Y月' 格式字符串转换为数值年数"""
+    if pd.isna(val):
+        return None
+    val = str(val).strip()
+    match = re.match(r'(\d+)年(\d+)月', val)
+    if match:
+        return int(match.group(1)) + int(match.group(2)) / 12.0
+    match = re.match(r'(\d+)年', val)
+    if match:
+        return float(match.group(1))
+    try:
+        return float(val)
+    except:
+        return None
+
 COLOR_BG   = "#F8FAFC"
 COLOR_CARD = "#FFFFFF"
 
@@ -356,6 +373,14 @@ payroll = filter_df(payroll_raw, sel_months, sel_dept)
 cost    = filter_df(cost_raw,    sel_months, sel_dept)
 talent  = filter_df(talent_raw,  sel_months, sel_dept)
 
+# ── 统一转换工龄列为数值 ──
+for df, name in [(payroll, "payroll"), (talent, "talent")]:
+    if df is not None and "工龄" in df.columns:
+        try:
+            df["工龄_数值"] = df["工龄"].apply(parse_work_years)
+        except Exception:
+            pass
+
 # ═══════════════════════════════════════════════════════════
 # 模块1：综合仪表板
 # ═══════════════════════════════════════════════════════════
@@ -465,13 +490,18 @@ if nav == "📈 人力资源分析":
     with tabs[2]:
         st.subheader("留存率分析")
         if "工龄" in payroll.columns:
-            bins = [0,1,3,5,10,100]
-            labels = ["1年以内","1-3年","3-5年","5-10年","10年以上"]
-            payroll["工龄段"] = pd.cut(payroll["工龄"], bins=bins, labels=labels, right=False)
-            rt = payroll.groupby("工龄段")["员工ID"].nunique().reset_index()
-            rt.columns = ["工龄段","在职人数"]
-            fig = px.bar(rt, x="工龄段", y="在职人数", title="各工龄段在职人数")
-            st.plotly_chart(fig, use_container_width=True)
+            payroll["工龄_数值"] = payroll["工龄"].apply(parse_work_years)
+            valid = payroll["工龄_数值"].dropna()
+            if len(valid) > 0:
+                bins = [0,1,3,5,10,100]
+                labels = ["1年以内","1-3年","3-5年","5-10年","10年以上"]
+                payroll["工龄段"] = pd.cut(valid.reindex(payroll.index), bins=bins, labels=labels, right=False)
+                rt = payroll.groupby("工龄段")["员工ID"].nunique().reset_index()
+                rt.columns = ["工龄段","在职人数"]
+                fig = px.bar(rt, x="工龄段", y="在职人数", title="各工龄段在职人数")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("💡 工龄数据无法解析")
         else:
             st.info("💡 数据表中需增加'工龄'字段")
     with tabs[3]:
@@ -486,8 +516,16 @@ if nav == "📈 人力资源分析":
     with tabs[4]:
         st.subheader("工龄分析")
         if "工龄" in payroll.columns:
-            fig = px.histogram(payroll, x="工龄", nbins=20, title="工龄分布直方图")
-            st.plotly_chart(fig, use_container_width=True)
+            # 使用已转换的数值工龄
+            if "工龄_数值" not in payroll.columns:
+                payroll["工龄_数值"] = payroll["工龄"].apply(parse_work_years)
+            valid_years = payroll["工龄_数值"].dropna()
+            if len(valid_years) > 0:
+                fig = px.histogram(x=valid_years, nbins=20, title="工龄分布直方图")
+                fig.update_xaxes(title="工龄（年）")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("💡 工龄数据无法解析")
         else:
             st.info("💡 数据表中需增加'工龄'字段")
     with tabs[5]:
@@ -791,7 +829,11 @@ if nav == "🚨 人员风险预警":
                 talent_copy["绩效分"] = talent_copy["绩效等级"].map(ps).fillna(3)
                 cluster_features.append("绩效分")
             if "工龄" in talent.columns:
-                cluster_features.append("工龄")
+                # 优先使用数值工龄，不存在则尝试转换
+                if "工龄_数值" in talent.columns:
+                    cluster_features.append("工龄_数值")
+                else:
+                    cluster_features.append("工龄")
             if "迟到次数" in payroll.columns:
                 merged = talent.merge(payroll[["员工ID", "迟到次数"]], on="员工ID", how="left")
                 merged["迟到次数"] = merged["迟到次数"].fillna(0)
