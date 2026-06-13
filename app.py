@@ -341,7 +341,7 @@ ALL_MONTHS = sorted(set(
 nav = st.sidebar.radio("选择模块", [
     "🏠 综合仪表板", "💰 薪酬考勤分析", "📈 人力资源分析",
     "💼 人工成本分析", "🎯 人员盘点分析", "🏆 绩效分析",
-    "📅 考勤异常分析", "📝 一键生成周报"
+    "📅 考勤异常分析", "🚨 人员风险预警", "📝 一键生成分析报告"
 ])
 st.sidebar.markdown("---")
 st.sidebar.caption(f"数据月份：{', '.join(ALL_MONTHS) if ALL_MONTHS else '无'}")
@@ -677,9 +677,158 @@ if nav == "📅 考勤异常分析":
         st.markdown(f'<div class="analysis-card">{narrative_7}</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════
-# 模块8：一键生成周报
+# 模块8：人员风险预警（新增）
 # ═══════════════════════════════════════════════════════════
-if nav == "📝 一键生成周报":
+if nav == "🚨 人员风险预警":
+    st.title("🚨 人员风险预警")
+    st.caption("基于绩效、考勤、团队反馈等多维度数据，自动识别不稳定人员和离职风险")
+    
+    tabs = st.tabs(["🔴 不稳定人员", "📋 离职原因分析", "📊 风险聚类"])
+    
+    with tabs[0]:
+        st.subheader("🔴 团队不稳定人员清单")
+        st.caption("以下人员来自团队反馈，存在离职倾向或稳定性问题")
+        
+        if talent is not None and not talent.empty:
+            # 筛选中高风险人员
+            risk_people = talent[talent["离职风险"].isin(["高", "中"])].copy()
+            if not risk_people.empty:
+                for _, p in risk_people.iterrows():
+                    risk_emoji = "🔴" if p["离职风险"] == "高" else "🟡"
+                    with st.expander(f"{risk_emoji} {p['姓名']} | {p['部门']} | 绩效{p['绩效等级']} | 风险:{p['离职风险']}"):
+                        col_a, col_b = st.columns([1, 2])
+                        with col_a:
+                            st.markdown(f"**员工ID**：{p['员工ID']}")
+                            st.markdown(f"**部门**：{p['部门']}")
+                            st.markdown(f"**职级**：{p['职级']}")
+                            st.markdown(f"**工龄**：{p['工龄']}年")
+                            st.markdown(f"**绩效**：{p['绩效等级']}")
+                            st.markdown(f"**潜力**：{p['潜力评级']}")
+                            st.markdown(f"**关键岗位**：{p['关键岗位']}")
+                        with col_b:
+                            st.markdown(f"**风险等级**：{p['离职风险']}")
+                            st.markdown(f"**继任准备**：{p['继任者准备度']}")
+                            st.progress(
+                                0.8 if p["离职风险"] == "高" else 0.5,
+                                text=f"风险指数 {'80%' if p['离职风险'] == '高' else '50%'}"
+                            )
+            else:
+                st.success("✅ 当前无中高风险人员")
+        else:
+            st.info("💡 请确保已加载人才盘点数据")
+    
+    with tabs[1]:
+        st.subheader("📋 离职原因分析")
+        st.caption("离职原因分类统计与趋势分析")
+        
+        if payroll is not None and not payroll.empty:
+            if "离职状态" in payroll.columns and "离职原因" in payroll.columns:
+                left = payroll[payroll["离职状态"] == "已离职"].copy()
+                if not left.empty:
+                    # 离职原因分类统计
+                    st.markdown("#### 离职原因分布")
+                    
+                    # 定义离职类别映射
+                    reason_categories = {
+                        '团队优化': ['团队优化', '优化'],
+                        '职业规划': ['职业规划', '职业发展'],
+                        '工作原因': ['工作原因', '工作压力', '加班'],
+                        '薪资原因': ['薪资', '薪酬'],
+                        '家庭原因': ['家庭'],
+                        '身体原因': ['身体', '健康'],
+                        '通勤原因': ['通勤'],
+                        '实习结束': ['实习'],
+                        '项目调整': ['项目调整'],
+                        '产品原因': ['产品'],
+                        '团队原因': ['团队原因', '管理'],
+                    }
+                    
+                    # 按部门统计离职
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        dept_left = left.groupby("部门").size().reset_index(name="离职人数")
+                        dept_left = dept_left.sort_values("离职人数", ascending=False)
+                        fig = px.bar(dept_left, x="部门", y="离职人数", 
+                                    title="各部门离职人数", color="离职人数",
+                                    color_continuous_scale="Reds")
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    with col_b:
+                        # 显示离职人员明细
+                        st.markdown("#### 离职人员明细")
+                        show_cols = [c for c in ["姓名", "部门", "职级", "工龄", "离职原因"] if c in left.columns]
+                        st.dataframe(left[show_cols], use_container_width=True)
+                    
+                    # AI分析
+                    st.markdown("---")
+                    st.markdown("### 🧠 离职分析洞察")
+                    if len(left) >= 3:
+                        # 离职最多的部门
+                        top_dept = dept_left.iloc[0] if not dept_left.empty else None
+                        st.markdown(f"- 🔴 **离职人数最多**：{top_dept['部门']}（{int(top_dept['离职人数'])}人）")
+                        
+                        # 总离职率
+                        total_emp = len(payroll["员工ID"].unique())
+                        left_count = len(left["员工ID"].unique())
+                        st.markdown(f"- 📊 **总离职率**：{left_count}/{total_emp} = {left_count/total_emp*100:.1f}%")
+                        
+                        st.markdown(f"- ⚠️ 建议重点关注离职率高的部门，了解深层原因并制定保留方案")
+                else:
+                    st.success("✅ 当前无离职人员")
+            else:
+                st.info("💡 数据中需包含'离职状态'和'离职原因'字段")
+    
+    with tabs[2]:
+        st.subheader("📊 风险聚类分析")
+        st.caption("基于K-Means算法对人员进行风险聚类")
+        
+        if talent is not None and not talent.empty and payroll is not None and not payroll.empty:
+            # 合并薪酬数据
+            cluster_features = []
+            if "绩效等级" in talent.columns:
+                ps = {"S": 5, "A": 4, "B": 3, "C": 2, "D": 1}
+                talent_copy = talent.copy()
+                talent_copy["绩效分"] = talent_copy["绩效等级"].map(ps).fillna(3)
+                cluster_features.append("绩效分")
+            if "工龄" in talent.columns:
+                cluster_features.append("工龄")
+            if "迟到次数" in payroll.columns:
+                merged = talent.merge(payroll[["员工ID", "迟到次数"]], on="员工ID", how="left")
+                merged["迟到次数"] = merged["迟到次数"].fillna(0)
+            else:
+                merged = talent
+            
+            if len(cluster_features) >= 2:
+                from sklearn.cluster import KMeans
+                from sklearn.preprocessing import StandardScaler
+                valid = merged[cluster_features].dropna()
+                if len(valid) >= 6:
+                    scaler = StandardScaler()
+                    X = scaler.fit_transform(valid)
+                    kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+                    labels = kmeans.fit_predict(X)
+                    merged = merged.loc[valid.index].copy()
+                    merged["风险聚类"] = labels
+                    
+                    # 聚类统计
+                    cluster_names = {0: "🟢 低风险群", 1: "🟡 中风险群", 2: "🔴 高风险群"}
+                    merged["风险群组"] = merged["风险聚类"].map(cluster_names)
+                    
+                    cluster_counts = merged["风险群组"].value_counts()
+                    for name, count in cluster_counts.items():
+                        st.metric(name, f"{count}人")
+                    
+                    # 显示高风险群组
+                    high_risk = merged[merged["风险聚类"] == 2]
+                    if not high_risk.empty:
+                        st.markdown("#### 🔴 高风险群组成员")
+                        show_cols = [c for c in ["姓名", "部门", "职级", "工龄", "绩效等级", "离职风险"] if c in high_risk.columns]
+                        st.dataframe(high_risk[show_cols], use_container_width=True)
+
+# ═══════════════════════════════════════════════════════════
+# 模块9：一键生成分析报告（原模块8）
+# ═══════════════════════════════════════════════════════════
+if nav == "📝 一键生成分析报告":
     st.title("📝 一键生成分析报告")
     st.caption("基于当前数据自动生成深度HR分析报告，包含趋势分析、异常预警、行动建议")
 
