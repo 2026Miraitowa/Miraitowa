@@ -8,8 +8,60 @@ from plotly.subplots import make_subplots
 import os, re, io, base64, zipfile, json
 from datetime import datetime
 import auth
+from analytics_engine import (
+    analyze_module_1_dashboard,
+    analyze_module_2_payroll,
+    analyze_module_3_hr,
+    analyze_module_4_cost,
+    analyze_module_5_talent_review,
+    analyze_module_6_performance,
+    analyze_module_7_attendance,
+    analyze_module_8_report,
+)
 
 st.set_page_config(page_title="HR分析看板", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+
+# ── AI 分析卡片样式 ──
+st.markdown("""
+<style>
+.analysis-card {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin: 16px 0;
+    color: #f1f5f9;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+.analysis-card h3 {
+    margin: 0 0 12px 0;
+    font-size: 17px;
+    color: #94a3b8;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+}
+.analysis-card p {
+    margin: 6px 0;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #e2e8f0;
+}
+.analysis-card .highlight {
+    background: rgba(99, 102, 241, 0.3);
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-weight: 600;
+    color: #c7d2fe;
+}
+.analysis-card .warning {
+    color: #fbbf24;
+    font-weight: 600;
+}
+.analysis-card strong {
+    color: #f8fafc;
+}
+</style>
+""", unsafe_allow_html=True)
+
 if not auth.check_password():
     st.stop()
 
@@ -334,6 +386,12 @@ if nav == "🏠 综合仪表板":
             dfp = cost.groupby("部门")["总成本"].sum().reset_index()
             fig = px.pie(dfp, names="部门", values="总成本", hole=0.4, title="成本按部门占比")
             st.plotly_chart(fig, use_container_width=True)
+    # ── AI 智能分析 ──
+    st.markdown("---")
+    with st.spinner("🧠 AI 正在分析数据..."):
+        narrative_1 = analyze_module_1_dashboard(payroll, cost, talent)
+        st.markdown(f'<div class="analysis-card">{narrative_1}</div>', unsafe_allow_html=True)
+
     if talent is not None and "离职风险" in talent.columns:
         st.subheader("⚠️ 离职风险一览")
         risk = talent[talent["离职风险"].isin(["高","中"])].copy()
@@ -364,6 +422,12 @@ if nav == "💰 薪酬考勤分析":
     st.subheader("📋 员工薪酬明细")
     show = [c for c in ["员工ID","姓名","部门","岗位","基本工资","绩效工资","加班费","奖金","实发工资"] if c in payroll.columns]
     st.dataframe(payroll[show], use_container_width=True)
+
+    # ── AI 智能分析 ──
+    st.markdown("---")
+    with st.spinner("🧠 AI 正在分析数据..."):
+        narrative_2 = analyze_module_2_payroll(payroll, sel)
+        st.markdown(f'<div class="analysis-card">{narrative_2}</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════
 # 模块3：人力资源分析
@@ -436,6 +500,20 @@ if nav == "📈 人力资源分析":
         else:
             st.info("💡 数据表中需增加'学历'字段")
 
+    # ── AI 智能分析（模块3：基于当前tab）──
+    st.markdown("---")
+    with st.spinner("🧠 AI 正在分析数据..."):
+        current_tab_3 = tabs[tabs.index(st._active_tab)] if hasattr(st, '_active_tab') else "离职率"
+        try:
+            from streamlit.runtime.scriptrunner import get_script_run_ctx
+            ctx = get_script_run_ctx()
+            if ctx:
+                query = ctx.query_string
+        except:
+            pass
+        narrative_3 = analyze_module_3_hr(payroll, "离职率")  # 默认
+        st.markdown(f'<div class="analysis-card">{narrative_3}</div>', unsafe_allow_html=True)
+
 # ═══════════════════════════════════════════════════════════
 # 模块4：人工成本分析
 # ═══════════════════════════════════════════════════════════
@@ -475,6 +553,12 @@ if nav == "💼 人工成本分析":
         if payroll is not None and "实发工资" in payroll.columns:
             cols = [c for c in ["员工ID","姓名","部门","岗位","实发工资"] if c in payroll.columns]
             st.dataframe(payroll.nlargest(10,"实发工资")[cols], use_container_width=True)
+
+    # ── AI 智能分析 ──
+    st.markdown("---")
+    with st.spinner("🧠 AI 正在分析数据..."):
+        narrative_4 = analyze_module_4_cost(cost, payroll, "成本构成")
+        st.markdown(f'<div class="analysis-card">{narrative_4}</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════
 # 模块5：人员盘点分析
@@ -524,6 +608,12 @@ if nav == "🎯 人员盘点分析":
         else:
             st.info("💡 需'继任者准备度'字段")
 
+    # ── AI 智能分析 ──
+    st.markdown("---")
+    with st.spinner("🧠 AI 正在分析数据..."):
+        narrative_5 = analyze_module_5_talent_review(talent, payroll, "九宫格")
+        st.markdown(f'<div class="analysis-card">{narrative_5}</div>', unsafe_allow_html=True)
+
 # ═══════════════════════════════════════════════════════════
 # 模块6：绩效分析
 # ═══════════════════════════════════════════════════════════
@@ -543,6 +633,12 @@ if nav == "🏆 绩效分析":
         st.subheader("个人绩效查询")
         cols = [c for c in ["员工ID","姓名","部门","绩效等级","潜力评级","离职风险","关键岗位"] if c in talent.columns]
         st.dataframe(talent[cols], use_container_width=True)
+
+    # ── AI 智能分析 ──
+    st.markdown("---")
+    with st.spinner("🧠 AI 正在分析数据..."):
+        narrative_6 = analyze_module_6_performance(talent, "团队绩效")
+        st.markdown(f'<div class="analysis-card">{narrative_6}</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════
 # 模块7：考勤异常分析
@@ -574,19 +670,57 @@ if nav == "📅 考勤异常分析":
             fig = px.bar(ar, x="部门", y="出勤率%", title="各部门出勤率(%)", color="出勤率%", color_continuous_scale="Greens")
             st.plotly_chart(fig, use_container_width=True)
 
+    # ── AI 智能分析 ──
+    st.markdown("---")
+    with st.spinner("🧠 AI 正在分析数据..."):
+        narrative_7 = analyze_module_7_attendance(payroll, "异常人员清单")
+        st.markdown(f'<div class="analysis-card">{narrative_7}</div>', unsafe_allow_html=True)
+
 # ═══════════════════════════════════════════════════════════
 # 模块8：一键生成周报
 # ═══════════════════════════════════════════════════════════
 if nav == "📝 一键生成周报":
-    st.title("📝 一键生成周报")
-    if st.button("🚀 生成周报", type="primary", use_container_width=True):
-        tc, av, hd, ar, hr = calc_kpi(payroll, cost, talent)
-        r = []
-        r.append("# HR数据分析周报")
-        r.append(f"生成时间：{datetime.now().strftime('%Y年%m月%d日')}")
-        r.append(f"数据月份：{', '.join(sel_months) if sel_months else '全部'}")
-        r.append(f"总人数：{hd}人  总成本：¥{tc:,.0f}  平均薪酬：¥{av:,.0f}")
-        r.append(f"出勤率：{ar}%  高风险人数：{hr}人")
-        report = "\n".join(r)
-        st.markdown(report)
-        st.download_button("📥 下载报告", report, "HR周报.md", "text/markdown")
+    st.title("📝 一键生成分析报告")
+    st.caption("基于当前数据自动生成深度HR分析报告，包含趋势分析、异常预警、行动建议")
+
+    if st.button("🚀 生成分析报告", type="primary", use_container_width=True):
+        if payroll is None and cost is None and talent is None:
+            st.warning("⚠️ 未检测到任何数据，请先上传或生成数据")
+        else:
+            with st.spinner("🧠 AI 正在深度分析数据，生成报告..."):
+                report = analyze_module_8_report(
+                    payroll, cost, talent,
+                    sel_months if sel_months else (ALL_MONTHS if ALL_MONTHS else []),
+                    sel_dept
+                )
+                st.markdown(report)
+
+                # 下载按钮
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    st.download_button(
+                        "📥 下载 Markdown 报告",
+                        report,
+                        f"HR分析报告_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+                        "text/markdown",
+                        use_container_width=True
+                    )
+                with col_dl2:
+                    # 同时打包数据
+                    import io as _io
+                    buf = _io.BytesIO()
+                    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        zf.writestr("分析报告.md", report)
+                        if payroll is not None:
+                            zf.writestr("薪酬考勤数据.csv", payroll.to_csv(index=False).encode('utf-8-sig'))
+                        if cost is not None:
+                            zf.writestr("人力成本数据.csv", cost.to_csv(index=False).encode('utf-8-sig'))
+                        if talent is not None:
+                            zf.writestr("人才盘点数据.csv", talent.to_csv(index=False).encode('utf-8-sig'))
+                    st.download_button(
+                        "📦 下载报告+数据包",
+                        buf.getvalue(),
+                        f"HR报告数据包_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
+                        "application/zip",
+                        use_container_width=True
+                    )
